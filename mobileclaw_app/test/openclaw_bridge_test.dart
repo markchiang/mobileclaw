@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobileclaw_app/core/services/jsonl_memory_store.dart';
 import 'package:mobileclaw_app/core/services/openclaw_bridge.dart';
+import 'package:mobileclaw_app/core/services/web_config_store.dart';
 
 void main() {
   group('OpenclawBridge', () {
@@ -34,6 +35,7 @@ void main() {
       bridge = OpenclawBridge(
         appWorkspace: Directory('${appRoot.path}/workspace'),
         memoryStore: store,
+        webConfigStore: WebConfigStore(appRoot),
       );
     });
 
@@ -70,6 +72,17 @@ void main() {
           await exportHome.delete(recursive: true);
         }
       }
+    });
+
+    test('web_search returns error when disabled in settings', () async {
+      final webStore = WebConfigStore(appRoot);
+      await webStore.save(WebConfig.defaults.copyWith(enabled: false));
+      final out = await bridge.executeWorkspaceTool(
+        'web_search',
+        <String, dynamic>{'query': 'OpenAI'},
+      );
+      expect(out, contains('"ok":false'));
+      expect(out, contains('disabled'));
     });
   });
 }

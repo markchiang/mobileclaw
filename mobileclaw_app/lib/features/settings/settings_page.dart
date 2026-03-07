@@ -8,6 +8,7 @@ import '../../core/services/backup_service.dart';
 import '../../core/services/jsonl_memory_store.dart';
 import '../../core/services/llm_config_store.dart';
 import '../../core/services/openclaw_bridge.dart';
+import '../../core/services/web_config_store.dart';
 import 'workspace_docs_page.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -28,17 +29,24 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   late final LlmConfigStore _configStore;
+  late final WebConfigStore _webConfigStore;
   final TextEditingController _apiKey = TextEditingController();
   final TextEditingController _baseUrl = TextEditingController();
   final TextEditingController _model = TextEditingController();
+  final TextEditingController _tavilyApiKey = TextEditingController();
+  final TextEditingController _tavilyBaseUrl = TextEditingController();
+  final TextEditingController _webMaxResults = TextEditingController();
 
   LlmConfig _config = LlmConfig.defaults;
+  WebConfig _webConfig = WebConfig.defaults;
 
   @override
   void initState() {
     super.initState();
     _configStore = LlmConfigStore(widget.appRoot);
+    _webConfigStore = WebConfigStore(widget.appRoot);
     _loadLlmConfig();
+    _loadWebConfig();
   }
 
   @override
@@ -46,6 +54,9 @@ class _SettingsPageState extends State<SettingsPage> {
     _apiKey.dispose();
     _baseUrl.dispose();
     _model.dispose();
+    _tavilyApiKey.dispose();
+    _tavilyBaseUrl.dispose();
+    _webMaxResults.dispose();
     super.dispose();
   }
 
@@ -57,6 +68,19 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() {
       _config = cfg;
       _fillControllers(cfg.selectedProfile);
+    });
+  }
+
+  Future<void> _loadWebConfig() async {
+    final cfg = await _webConfigStore.load();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _webConfig = cfg;
+      _tavilyApiKey.text = cfg.tavilyApiKey;
+      _tavilyBaseUrl.text = cfg.tavilyBaseUrl;
+      _webMaxResults.text = cfg.maxResults.toString();
     });
   }
 
@@ -99,6 +123,24 @@ class _SettingsPageState extends State<SettingsPage> {
       _config = nextConfig;
     });
     _snack(context, 'LLM 設定已儲存');
+  }
+
+  Future<void> _saveWebConfig() async {
+    final parsedMax = int.tryParse(_webMaxResults.text.trim());
+    final next = _webConfig.copyWith(
+      tavilyApiKey: _tavilyApiKey.text.trim(),
+      tavilyBaseUrl: _tavilyBaseUrl.text.trim(),
+      maxResults: (parsedMax ?? _webConfig.maxResults).clamp(1, 10),
+    );
+    await _webConfigStore.save(next);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _webConfig = next;
+      _webMaxResults.text = next.maxResults.toString();
+    });
+    _snack(context, 'Web 搜尋設定已儲存');
   }
 
   Future<void> _importFromFileSelector() async {
@@ -214,6 +256,56 @@ class _SettingsPageState extends State<SettingsPage> {
             child: FilledButton(
               onPressed: _saveLlmConfig,
               child: const Text('儲存 LLM 設定'),
+            ),
+          ),
+          const Divider(),
+          SwitchListTile(
+            title: const Text('啟用 Web Search 工具'),
+            subtitle: const Text('未設定 Tavily Key 時會使用 DuckDuckGo fallback'),
+            value: _webConfig.enabled,
+            onChanged: (v) => setState(() {
+              _webConfig = _webConfig.copyWith(enabled: v);
+            }),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: TextField(
+              controller: _tavilyApiKey,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Tavily API Key (optional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: TextField(
+              controller: _tavilyBaseUrl,
+              decoration: const InputDecoration(
+                labelText: 'Tavily Base URL',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: TextField(
+              controller: _webMaxResults,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Web Search Max Results (1-10)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: FilledButton(
+              onPressed: () async {
+                await _saveWebConfig();
+              },
+              child: const Text('儲存 Web 搜尋設定'),
             ),
           ),
           const Divider(),

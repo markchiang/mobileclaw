@@ -8,6 +8,7 @@ import '../../core/services/ai_runtime.dart';
 import '../../core/services/jsonl_memory_store.dart';
 import '../../core/services/llm_config_store.dart';
 import '../../core/services/openclaw_bridge.dart';
+import '../../core/services/web_config_store.dart';
 
 class ChatController extends ChangeNotifier {
   ChatController({required this.appRoot, this.sessionKey = 'default'});
@@ -29,7 +30,11 @@ class ChatController extends ChangeNotifier {
     memoryStore = JsonlMemoryStore(appRoot);
     await memoryStore.init();
 
-    bridge = OpenclawBridge(appWorkspace: workspace, memoryStore: memoryStore);
+    bridge = OpenclawBridge(
+      appWorkspace: workspace,
+      memoryStore: memoryStore,
+      webConfigStore: WebConfigStore(appRoot),
+    );
     llmConfigStore = LlmConfigStore(appRoot);
     runtime = AiRuntime(
       provider: OpenAiCompatibleProvider(configStore: llmConfigStore),

@@ -6,6 +6,7 @@ import 'package:mobileclaw_app/core/providers/llm_provider.dart';
 import 'package:mobileclaw_app/core/services/ai_runtime.dart';
 import 'package:mobileclaw_app/core/services/jsonl_memory_store.dart';
 import 'package:mobileclaw_app/core/services/openclaw_bridge.dart';
+import 'package:mobileclaw_app/core/services/web_config_store.dart';
 
 class _StaticProvider implements LlmProvider {
   List<ChatMessage> lastMessages = const <ChatMessage>[];
@@ -70,8 +71,11 @@ void main() {
           .writeAsString('# Long memory');
       await File('${workspace.path}/project-note.md')
           .writeAsString('note-content');
-      final bridge =
-          OpenclawBridge(appWorkspace: workspace, memoryStore: memory);
+      final bridge = OpenclawBridge(
+        appWorkspace: workspace,
+        memoryStore: memory,
+        webConfigStore: WebConfigStore(root),
+      );
       final provider = _StaticProvider();
       final runtime = AiRuntime(
         provider: provider,
@@ -118,8 +122,11 @@ void main() {
       await memory.init();
       final workspace = Directory('${root.path}/workspace')
         ..createSync(recursive: true);
-      final bridge =
-          OpenclawBridge(appWorkspace: workspace, memoryStore: memory);
+      final bridge = OpenclawBridge(
+        appWorkspace: workspace,
+        memoryStore: memory,
+        webConfigStore: WebConfigStore(root),
+      );
       final runtime = AiRuntime(
         provider: _ToolCallingProvider(),
         memoryStore: memory,

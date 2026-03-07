@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'core/services/jsonl_memory_store.dart';
 import 'core/services/background_guard.dart';
 import 'core/services/openclaw_bridge.dart';
+import 'core/services/web_config_store.dart';
 import 'features/chat/chat_controller.dart';
 import 'features/chat/chat_page.dart';
 import 'features/settings/settings_page.dart';
@@ -139,6 +140,7 @@ class _MobileClawAppState extends State<MobileClawApp> {
     final bridge = OpenclawBridge(
       appWorkspace: Directory('${appRoot.path}/workspace'),
       memoryStore: JsonlMemoryStore(appRoot),
+      webConfigStore: WebConfigStore(appRoot),
     );
 
     return MaterialApp(

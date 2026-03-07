@@ -7,6 +7,7 @@ import '../models/chat_models.dart';
 import '../providers/llm_provider.dart';
 import 'jsonl_memory_store.dart';
 import 'skill_loader.dart';
+import 'web_config_store.dart';
 
 class ImportSummary {
   const ImportSummary({
@@ -31,10 +32,15 @@ class ImportedFileData {
 }
 
 class OpenclawBridge {
-  OpenclawBridge({required this.appWorkspace, required this.memoryStore});
+  OpenclawBridge({
+    required this.appWorkspace,
+    required this.memoryStore,
+    required this.webConfigStore,
+  });
 
   final Directory appWorkspace;
   final JsonlMemoryStore memoryStore;
+  final WebConfigStore webConfigStore;
 
   List<LlmToolDefinition> workspaceTools() {
     return const <LlmToolDefinition>[
@@ -106,6 +112,42 @@ class OpenclawBridge {
             },
           },
           'required': <String>['path', 'content'],
+          'additionalProperties': false,
+        },
+      ),
+      LlmToolDefinition(
+        name: 'web_search',
+        description:
+            'Search the web for recent/public information. Prefer this for current events and facts.',
+        parameters: <String, Object?>{
+          'type': 'object',
+          'properties': <String, Object?>{
+            'query': <String, Object?>{
+              'type': 'string',
+              'description': 'Search query.',
+            },
+            'max_results': <String, Object?>{
+              'type': 'integer',
+              'description': 'Optional number of results (1-10).',
+            },
+          },
+          'required': <String>['query'],
+          'additionalProperties': false,
+        },
+      ),
+      LlmToolDefinition(
+        name: 'web_fetch',
+        description:
+            'Fetch page content by URL. Use after web_search when you need details.',
+        parameters: <String, Object?>{
+          'type': 'object',
+          'properties': <String, Object?>{
+            'url': <String, Object?>{
+              'type': 'string',
+              'description': 'HTTP/HTTPS URL to fetch.',
+            },
+          },
+          'required': <String>['url'],
           'additionalProperties': false,
         },
       ),
@@ -319,6 +361,7 @@ class OpenclawBridge {
 - Before answering, consult workspace markdown files when relevant.
 - Use tools to read/write markdown files under workspace.
 - Persist long-term memory updates in memory/MEMORY.md when the user provides stable preferences or facts.
+- Use web_search/web_fetch when the task needs up-to-date web information.
 ''';
     final workspaceAttachments = await _buildWorkspaceAttachmentContext();
     if (workspaceAttachments.isEmpty) {
@@ -469,6 +512,10 @@ class OpenclawBridge {
             'path': p.relative(file.path, from: appWorkspace.path),
             'bytes': content.length,
           });
+        case 'web_search':
+          return _webSearch(args);
+        case 'web_fetch':
+          return _webFetch(args);
         default:
           return jsonEncode(<String, Object?>{
             'ok': false,
@@ -481,6 +528,237 @@ class OpenclawBridge {
         'error': '$e',
       });
     }
+  }
+
+  Future<String> _webSearch(Map<String, dynamic> args) async {
+    final query = '${args['query'] ?? ''}'.trim();
+    if (query.isEmpty) {
+      return jsonEncode(<String, Object?>{
+        'ok': false,
+        'error': 'query is required',
+      });
+    }
+    final cfg = await webConfigStore.load();
+    if (!cfg.enabled) {
+      return jsonEncode(<String, Object?>{
+        'ok': false,
+        'error': 'web search is disabled in settings',
+      });
+    }
+    final requested = (args['max_results'] as num?)?.toInt() ?? cfg.maxResults;
+    final maxResults = requested.clamp(1, 10);
+
+    if (cfg.tavilyApiKey.trim().isNotEmpty) {
+      return _searchViaTavily(
+        query: query,
+        maxResults: maxResults,
+        apiKey: cfg.tavilyApiKey.trim(),
+        baseUrl: cfg.tavilyBaseUrl.trim().isEmpty
+            ? WebConfig.defaults.tavilyBaseUrl
+            : cfg.tavilyBaseUrl.trim(),
+      );
+    }
+    return _searchViaDuckDuckGo(query: query, maxResults: maxResults);
+  }
+
+  Future<String> _searchViaTavily({
+    required String query,
+    required int maxResults,
+    required String apiKey,
+    required String baseUrl,
+  }) async {
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
+    try {
+      final uri = Uri.parse(baseUrl);
+      final req = await client.postUrl(uri);
+      req.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+      req.add(
+        utf8.encode(
+          jsonEncode(<String, Object?>{
+            'api_key': apiKey,
+            'query': query,
+            'max_results': maxResults,
+          }),
+        ),
+      );
+      final resp = await req.close();
+      final body = await utf8.decodeStream(resp);
+      if (resp.statusCode < 200 || resp.statusCode >= 300) {
+        return jsonEncode(<String, Object?>{
+          'ok': false,
+          'error': 'tavily error ${resp.statusCode}',
+          'body': body,
+        });
+      }
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      final results = (data['results'] as List<dynamic>? ?? <dynamic>[])
+          .whereType<Map<String, dynamic>>()
+          .take(maxResults)
+          .map(
+            (r) => <String, Object?>{
+              'title': '${r['title'] ?? ''}',
+              'url': '${r['url'] ?? ''}',
+              'content': '${r['content'] ?? ''}',
+            },
+          )
+          .toList();
+      return jsonEncode(<String, Object?>{
+        'ok': true,
+        'provider': 'tavily',
+        'query': query,
+        'results': results,
+      });
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Future<String> _searchViaDuckDuckGo({
+    required String query,
+    required int maxResults,
+  }) async {
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
+    try {
+      final uri = Uri.https('api.duckduckgo.com', '/', <String, String>{
+        'q': query,
+        'format': 'json',
+        'no_redirect': '1',
+        'no_html': '1',
+      });
+      final req = await client.getUrl(uri);
+      final resp = await req.close();
+      final body = await utf8.decodeStream(resp);
+      if (resp.statusCode < 200 || resp.statusCode >= 300) {
+        return jsonEncode(<String, Object?>{
+          'ok': false,
+          'error': 'duckduckgo error ${resp.statusCode}',
+          'body': body,
+        });
+      }
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      final results = <Map<String, Object?>>[];
+
+      final abstractText = '${data['AbstractText'] ?? ''}'.trim();
+      final abstractUrl = '${data['AbstractURL'] ?? ''}'.trim();
+      if (abstractText.isNotEmpty || abstractUrl.isNotEmpty) {
+        results.add(<String, Object?>{
+          'title': '${data['Heading'] ?? query}',
+          'url': abstractUrl,
+          'content': abstractText,
+        });
+      }
+
+      final related = (data['RelatedTopics'] as List<dynamic>? ?? <dynamic>[]);
+      for (final item in related) {
+        if (results.length >= maxResults) {
+          break;
+        }
+        if (item is Map<String, dynamic>) {
+          if (item['Text'] != null || item['FirstURL'] != null) {
+            results.add(<String, Object?>{
+              'title': '${item['Text'] ?? ''}',
+              'url': '${item['FirstURL'] ?? ''}',
+              'content': '${item['Text'] ?? ''}',
+            });
+            continue;
+          }
+          final nested = item['Topics'];
+          if (nested is List<dynamic>) {
+            for (final n in nested) {
+              if (results.length >= maxResults) {
+                break;
+              }
+              if (n is Map<String, dynamic> &&
+                  (n['Text'] != null || n['FirstURL'] != null)) {
+                results.add(<String, Object?>{
+                  'title': '${n['Text'] ?? ''}',
+                  'url': '${n['FirstURL'] ?? ''}',
+                  'content': '${n['Text'] ?? ''}',
+                });
+              }
+            }
+          }
+        }
+      }
+
+      return jsonEncode(<String, Object?>{
+        'ok': true,
+        'provider': 'duckduckgo',
+        'query': query,
+        'results': results.take(maxResults).toList(),
+      });
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Future<String> _webFetch(Map<String, dynamic> args) async {
+    final rawUrl = '${args['url'] ?? ''}'.trim();
+    if (rawUrl.isEmpty) {
+      return jsonEncode(<String, Object?>{
+        'ok': false,
+        'error': 'url is required',
+      });
+    }
+    Uri uri;
+    try {
+      uri = Uri.parse(rawUrl);
+    } catch (_) {
+      return jsonEncode(<String, Object?>{
+        'ok': false,
+        'error': 'invalid url',
+      });
+    }
+    if (!uri.hasScheme || (uri.scheme != 'http' && uri.scheme != 'https')) {
+      return jsonEncode(<String, Object?>{
+        'ok': false,
+        'error': 'only http/https urls are allowed',
+      });
+    }
+
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
+    try {
+      final req = await client.getUrl(uri);
+      req.headers.set(HttpHeaders.userAgentHeader, 'MobileClaw/0.1');
+      final resp = await req.close();
+      final body = await utf8.decodeStream(resp);
+      if (resp.statusCode < 200 || resp.statusCode >= 300) {
+        return jsonEncode(<String, Object?>{
+          'ok': false,
+          'error': 'fetch error ${resp.statusCode}',
+        });
+      }
+      final contentType = resp.headers.contentType?.mimeType ?? '';
+      final text = _normalizeFetchedText(body, contentType);
+      final clipped = text.length > 12000 ? text.substring(0, 12000) : text;
+      return jsonEncode(<String, Object?>{
+        'ok': true,
+        'url': rawUrl,
+        'content_type': contentType,
+        'content': clipped,
+      });
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  String _normalizeFetchedText(String body, String contentType) {
+    if (contentType.contains('html')) {
+      var txt = body
+          .replaceAll(RegExp(r'(?is)<script.*?>.*?</script>'), ' ')
+          .replaceAll(RegExp(r'(?is)<style.*?>.*?</style>'), ' ')
+          .replaceAll(RegExp(r'(?is)<[^>]+>'), ' ');
+      txt = txt
+          .replaceAll('&nbsp;', ' ')
+          .replaceAll('&amp;', '&')
+          .replaceAll('&lt;', '<')
+          .replaceAll('&gt;', '>');
+      return txt.replaceAll(RegExp(r'\s+'), ' ').trim();
+    }
+    return body.trim();
   }
 
   Future<FileSystemEntity> _resolveWorkspacePath(
