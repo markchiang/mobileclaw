@@ -4,9 +4,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 
 import 'core/services/jsonl_memory_store.dart';
 import 'core/services/background_guard.dart';
+import 'core/services/backup_service.dart';
 import 'core/services/cron_service.dart';
 import 'core/services/heartbeat_service.dart';
 import 'core/services/openclaw_bridge.dart';
@@ -76,6 +78,9 @@ class _MobileClawAppState extends State<MobileClawApp> {
         _controller = controller;
         _runtimeLoop = runtimeLoop;
       });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_maybePromptBrandingMigration(appRoot, workspace));
+      });
     } catch (e) {
       if (!mounted) {
         return;
@@ -118,6 +123,143 @@ class _MobileClawAppState extends State<MobileClawApp> {
       final data = await rootBundle.load(key);
       await outFile.writeAsBytes(data.buffer.asUint8List(), flush: true);
     }
+  }
+
+  Future<void> _migrateWorkspaceBranding(Directory workspace) async {
+    final targets = <String>['IDENTITY.md', 'SOUL.md'];
+    for (final name in targets) {
+      final file = File('${workspace.path}/$name');
+      if (!await file.exists()) {
+        continue;
+      }
+      final raw = await file.readAsString();
+      final migrated = raw
+          .replaceAll('PicoClaw', 'MobileClaw')
+          .replaceAll('picoclaw', 'mobileclaw')
+          .replaceAll('Picoclaw', 'MobileClaw')
+          .replaceAll(
+            'https://github.com/sipeed/picoclaw',
+            'https://github.com/markchiang/mobileclaw',
+          );
+      if (migrated != raw) {
+        await file.writeAsString(migrated, flush: true);
+      }
+    }
+  }
+
+  File _brandingDecisionFile(Directory appRoot) {
+    return File(p.join(appRoot.path, 'config', 'branding_migration_v1.txt'));
+  }
+
+  Future<bool> _hasLegacyBranding(Directory workspace) async {
+    for (final name in const <String>['IDENTITY.md', 'SOUL.md']) {
+      final file = File('${workspace.path}/$name');
+      if (!await file.exists()) {
+        continue;
+      }
+      final content = await file.readAsString();
+      if (content.contains('PicoClaw') ||
+          content.contains('picoclaw') ||
+          content.contains('Picoclaw') ||
+          content.contains('sipeed/picoclaw')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<void> _writeBrandingDecision(Directory appRoot, String value) async {
+    final f = _brandingDecisionFile(appRoot);
+    await f.parent.create(recursive: true);
+    await f.writeAsString(value, flush: true);
+  }
+
+  Future<String> _createBackupForBrandingMigration(Directory appRoot) async {
+    final backup = BackupService(
+      workspaceDir: Directory('${appRoot.path}/workspace'),
+      memoryDir: Directory('${appRoot.path}/memory'),
+    );
+    final ts = DateTime.now().toIso8601String().replaceAll(':', '-');
+    final out = await backup.createBundle(
+      File(p.join(appRoot.path, 'backups', 'branding_migration_$ts.zip')),
+    );
+    return out.path;
+  }
+
+  Future<void> _maybePromptBrandingMigration(
+      Directory appRoot, Directory workspace) async {
+    if (!mounted) {
+      return;
+    }
+    final decisionFile = _brandingDecisionFile(appRoot);
+    if (await decisionFile.exists()) {
+      return;
+    }
+    final need = await _hasLegacyBranding(workspace);
+    if (!need || !mounted) {
+      return;
+    }
+
+    final action = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('更新身份文件名稱'),
+          content: const Text(
+            '偵測到舊名稱 picoclaw。要更新為 mobileclaw 嗎？'
+            '\n\n你可以先備份，再覆蓋；或保留現狀。',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop('keep'),
+              child: const Text('保留現狀'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop('migrate'),
+              child: const Text('直接覆蓋'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop('backup_migrate'),
+              child: const Text('先備份再覆蓋'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!mounted || action == null) {
+      return;
+    }
+
+    if (action == 'keep') {
+      await _writeBrandingDecision(appRoot, 'keep');
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已保留現有 IDENTITY.md / SOUL.md')),
+      );
+      return;
+    }
+
+    if (action == 'backup_migrate') {
+      final backupPath = await _createBackupForBrandingMigration(appRoot);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已建立備份: $backupPath')),
+        );
+      }
+    }
+
+    await _migrateWorkspaceBranding(workspace);
+    await _writeBrandingDecision(appRoot, 'migrated');
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已更新為 mobileclaw 用詞')),
+    );
   }
 
   @override
