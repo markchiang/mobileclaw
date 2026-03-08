@@ -17,12 +17,14 @@ class _ChatPageState extends State<ChatPage> {
   final TextEditingController _input = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   int _lastMessageCount = 0;
+  String _lastSessionKey = '';
 
   @override
   void initState() {
     super.initState();
     widget.controller.addListener(_onChanged);
     _lastMessageCount = widget.controller.messages.length;
+    _lastSessionKey = widget.controller.currentSessionKey;
     WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToBottom());
   }
 
@@ -38,9 +40,12 @@ class _ChatPageState extends State<ChatPage> {
     if (mounted) {
       final nextCount = widget.controller.messages.length;
       final countIncreased = nextCount > _lastMessageCount;
+      final sessionChanged =
+          widget.controller.currentSessionKey != _lastSessionKey;
       _lastMessageCount = nextCount;
+      _lastSessionKey = widget.controller.currentSessionKey;
       setState(() {});
-      if (countIncreased) {
+      if (countIncreased || sessionChanged) {
         WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToBottom());
       }
     }
@@ -57,9 +62,31 @@ class _ChatPageState extends State<ChatPage> {
   @override
   Widget build(BuildContext context) {
     final items = widget.controller.messages;
+    final currentSession = widget.controller.currentSessionKey;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('MobileClaw')),
+      appBar: AppBar(
+        title: Text('MobileClaw · $currentSession'),
+        actions: <Widget>[
+          IconButton(
+            tooltip: '歷史對話',
+            icon: const Icon(Icons.history),
+            onPressed: _openHistorySheet,
+          ),
+          IconButton(
+            tooltip: '新對話',
+            icon: const Icon(Icons.add_comment_outlined),
+            onPressed: widget.controller.isBusy
+                ? null
+                : () async {
+                    await widget.controller.createNewChat();
+                    _input.clear();
+                    WidgetsBinding.instance
+                        .addPostFrameCallback((_) => _jumpToBottom());
+                  },
+          ),
+        ],
+      ),
       body: Column(
         children: <Widget>[
           Expanded(
@@ -111,6 +138,48 @@ class _ChatPageState extends State<ChatPage> {
         ],
       ),
     );
+  }
+
+  Future<void> _openHistorySheet() async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      builder: (BuildContext context) {
+        final sessions = widget.controller.sessions;
+        final current = widget.controller.currentSessionKey;
+        return SafeArea(
+          child: ListView(
+            children: <Widget>[
+              const ListTile(
+                title: Text('聊天歷史'),
+                subtitle: Text('選擇對話繼續'),
+              ),
+              for (final s in sessions)
+                ListTile(
+                  title: Text(
+                    s.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    s.key,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: s.key == current
+                      ? const Icon(Icons.check, size: 18)
+                      : null,
+                  onTap: () => Navigator.of(context).pop(s.key),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+    if (!mounted || selected == null) {
+      return;
+    }
+    await widget.controller.switchSession(selected);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToBottom());
   }
 }
 
