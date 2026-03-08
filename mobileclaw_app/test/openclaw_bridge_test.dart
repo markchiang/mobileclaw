@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -112,6 +113,65 @@ void main() {
         'job_id': jobId,
       });
       expect(remove, contains('"ok":true'));
+    });
+
+    test('file and exec tools work inside workspace', () async {
+      final write =
+          await bridge.executeWorkspaceTool('write_file', <String, dynamic>{
+        'path': 'notes/todo.txt',
+        'content': 'alpha',
+      });
+      expect(write, contains('"ok":true'));
+
+      final append =
+          await bridge.executeWorkspaceTool('append_file', <String, dynamic>{
+        'path': 'notes/todo.txt',
+        'content': '\nbeta',
+      });
+      expect(append, contains('"ok":true'));
+
+      final read =
+          await bridge.executeWorkspaceTool('read_file', <String, dynamic>{
+        'path': 'notes/todo.txt',
+      });
+      final readJson = jsonDecode(read) as Map<String, dynamic>;
+      expect(readJson['ok'], isTrue);
+      expect('${readJson['content']}', contains('alpha'));
+      expect('${readJson['content']}', contains('beta'));
+
+      final edit =
+          await bridge.executeWorkspaceTool('edit_file', <String, dynamic>{
+        'path': 'notes/todo.txt',
+        'old_text': 'beta',
+        'new_text': 'gamma',
+      });
+      expect(edit, contains('"ok":true'));
+      final fileText =
+          await File('${appRoot.path}/workspace/notes/todo.txt').readAsString();
+      expect(fileText, contains('gamma'));
+
+      final list =
+          await bridge.executeWorkspaceTool('list_dir', <String, dynamic>{
+        'path': 'notes',
+      });
+      expect(list, contains('todo.txt'));
+
+      final exec = await bridge.executeWorkspaceTool('exec', <String, dynamic>{
+        'command': 'cat notes/todo.txt',
+      });
+      final execJson = jsonDecode(exec) as Map<String, dynamic>;
+      expect(execJson['ok'], isTrue);
+      expect(execJson['exit_code'], 0);
+      expect('${execJson['stdout']}', contains('gamma'));
+    });
+
+    test('tools reject path escaping workspace', () async {
+      final read =
+          await bridge.executeWorkspaceTool('read_file', <String, dynamic>{
+        'path': '../outside.txt',
+      });
+      expect(read, contains('"ok":false'));
+      expect(read, contains('escapes workspace'));
     });
   });
 }

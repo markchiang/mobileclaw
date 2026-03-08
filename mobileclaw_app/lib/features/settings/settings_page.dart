@@ -33,6 +33,7 @@ class _SettingsPageState extends State<SettingsPage> {
   final TextEditingController _apiKey = TextEditingController();
   final TextEditingController _baseUrl = TextEditingController();
   final TextEditingController _model = TextEditingController();
+  final TextEditingController _maxToolIterations = TextEditingController();
   final TextEditingController _tavilyApiKey = TextEditingController();
   final TextEditingController _tavilyBaseUrl = TextEditingController();
   final TextEditingController _webMaxResults = TextEditingController();
@@ -54,6 +55,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _apiKey.dispose();
     _baseUrl.dispose();
     _model.dispose();
+    _maxToolIterations.dispose();
     _tavilyApiKey.dispose();
     _tavilyBaseUrl.dispose();
     _webMaxResults.dispose();
@@ -68,6 +70,7 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() {
       _config = cfg;
       _fillControllers(cfg.selectedProfile);
+      _maxToolIterations.text = cfg.maxToolIterations.toString();
     });
   }
 
@@ -113,14 +116,20 @@ class _SettingsPageState extends State<SettingsPage> {
     );
 
     final nextConfig = _config.copyWith(profiles: nextProfiles);
-    await _configStore.save(nextConfig);
+    final parsedIterations = int.tryParse(_maxToolIterations.text.trim());
+    final withIterations = nextConfig.copyWith(
+      maxToolIterations:
+          (parsedIterations ?? nextConfig.maxToolIterations).clamp(1, 50),
+    );
+    await _configStore.save(withIterations);
 
     if (!mounted) {
       return;
     }
 
     setState(() {
-      _config = nextConfig;
+      _config = withIterations;
+      _maxToolIterations.text = withIterations.maxToolIterations.toString();
     });
     _snack(context, 'LLM 設定已儲存');
   }
@@ -247,6 +256,17 @@ class _SettingsPageState extends State<SettingsPage> {
               controller: _model,
               decoration: const InputDecoration(
                 labelText: 'Model',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: TextField(
+              controller: _maxToolIterations,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Max Tool Iterations (1-50)',
                 border: OutlineInputBorder(),
               ),
             ),

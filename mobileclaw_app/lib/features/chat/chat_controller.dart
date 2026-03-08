@@ -40,10 +40,12 @@ class ChatController extends ChangeNotifier {
       skillRegistryService: SkillRegistryService(workspaceDir: workspace),
     );
     llmConfigStore = LlmConfigStore(appRoot);
+    final llmConfig = await llmConfigStore.load();
     runtime = AiRuntime(
       provider: OpenAiCompatibleProvider(configStore: llmConfigStore),
       memoryStore: memoryStore,
       bridge: bridge,
+      maxToolIterations: llmConfig.maxToolIterations,
     );
 
     messages

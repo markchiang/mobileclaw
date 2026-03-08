@@ -199,16 +199,24 @@ class _HomeScaffold extends StatefulWidget {
 
 class _HomeScaffoldState extends State<_HomeScaffold> {
   int _index = 0;
+  late final List<Widget> _pages;
 
   @override
-  Widget build(BuildContext context) {
-    final pages = <Widget>[
+  void initState() {
+    super.initState();
+    _pages = <Widget>[
       ChatPage(controller: widget.controller),
       widget.settingsBuilder(),
     ];
+  }
 
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-      body: pages[_index],
+      body: IndexedStack(
+        index: _index,
+        children: _pages,
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (int idx) => setState(() => _index = idx),

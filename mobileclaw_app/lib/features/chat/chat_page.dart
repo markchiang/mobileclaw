@@ -15,24 +15,43 @@ class ChatPage extends StatefulWidget {
 
 class _ChatPageState extends State<ChatPage> {
   final TextEditingController _input = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  int _lastMessageCount = 0;
 
   @override
   void initState() {
     super.initState();
     widget.controller.addListener(_onChanged);
+    _lastMessageCount = widget.controller.messages.length;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToBottom());
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_onChanged);
     _input.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
   void _onChanged() {
     if (mounted) {
+      final nextCount = widget.controller.messages.length;
+      final countIncreased = nextCount > _lastMessageCount;
+      _lastMessageCount = nextCount;
       setState(() {});
+      if (countIncreased) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToBottom());
+      }
     }
+  }
+
+  void _jumpToBottom() {
+    if (!mounted || !_scrollController.hasClients) {
+      return;
+    }
+    final bottom = _scrollController.position.maxScrollExtent;
+    _scrollController.jumpTo(bottom);
   }
 
   @override
@@ -45,6 +64,8 @@ class _ChatPageState extends State<ChatPage> {
         children: <Widget>[
           Expanded(
             child: ListView.builder(
+              key: const PageStorageKey<String>('chat_list'),
+              controller: _scrollController,
               reverse: false,
               itemCount: items.length,
               itemBuilder: (BuildContext context, int index) {

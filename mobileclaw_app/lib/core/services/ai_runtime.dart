@@ -11,12 +11,14 @@ class AiRuntime {
     required this.memoryStore,
     required this.bridge,
     this.model,
+    this.maxToolIterations = 20,
   });
 
   final LlmProvider provider;
   final JsonlMemoryStore memoryStore;
   final OpenclawBridge bridge;
   final String? model;
+  final int maxToolIterations;
 
   Future<ChatMessage> handleUserMessage({
     required String sessionKey,
@@ -54,7 +56,8 @@ class AiRuntime {
     final convo = <ChatMessage>[...promptMessages];
     final tools = bridge.workspaceTools();
 
-    for (var i = 0; i < 6; i += 1) {
+    final limit = maxToolIterations.clamp(1, 50);
+    for (var i = 0; i < limit; i += 1) {
       final resp = await provider.chat(
         messages: convo,
         model: model ?? provider.defaultModel,

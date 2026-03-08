@@ -57,6 +57,29 @@ class _ToolCallingProvider implements LlmProvider {
   }
 }
 
+class _InfiniteToolProvider implements LlmProvider {
+  @override
+  String get defaultModel => 'test/model';
+
+  @override
+  Future<LlmResponse> chat({
+    required List<ChatMessage> messages,
+    required String model,
+    Map<String, Object?> options = const <String, Object?>{},
+  }) async {
+    return LlmResponse(
+      content: '',
+      toolCalls: const <LlmToolCall>[
+        LlmToolCall(
+          id: 'loop_1',
+          name: 'write_workspace_doc',
+          argumentsJson: '{"path":"memory/MEMORY.md","content":"x"}',
+        ),
+      ],
+    );
+  }
+}
+
 void main() {
   test('summary is generated from most recent messages', () async {
     final root = await Directory.systemTemp.createTemp('mobileclaw-runtime-');
@@ -146,6 +169,37 @@ void main() {
       final memoryFile = File('${workspace.path}/memory/MEMORY.md');
       expect(await memoryFile.exists(), isTrue);
       expect(await memoryFile.readAsString(), contains('user likes tea'));
+    } finally {
+      if (await root.exists()) {
+        await root.delete(recursive: true);
+      }
+    }
+  });
+
+  test('maxToolIterations stops tool loop', () async {
+    final root = await Directory.systemTemp.createTemp('mobileclaw-runtime-');
+    try {
+      final memory = JsonlMemoryStore(root);
+      await memory.init();
+      final workspace = Directory('${root.path}/workspace')
+        ..createSync(recursive: true);
+      final bridge = OpenclawBridge(
+        appWorkspace: workspace,
+        memoryStore: memory,
+        webConfigStore: WebConfigStore(root),
+        cronService: CronService(root),
+        skillRegistryService: SkillRegistryService(workspaceDir: workspace),
+      );
+      final runtime = AiRuntime(
+        provider: _InfiniteToolProvider(),
+        memoryStore: memory,
+        bridge: bridge,
+        maxToolIterations: 1,
+      );
+
+      final reply =
+          await runtime.handleUserMessage(sessionKey: 'default', input: 'loop');
+      expect(reply.content, contains('工具迭代次數過多'));
     } finally {
       if (await root.exists()) {
         await root.delete(recursive: true);

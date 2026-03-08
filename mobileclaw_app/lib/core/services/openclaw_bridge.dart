@@ -1,5 +1,6 @@
-import 'dart:io';
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
@@ -118,6 +119,134 @@ class OpenclawBridge {
             },
           },
           'required': <String>['path', 'content'],
+          'additionalProperties': false,
+        },
+      ),
+      LlmToolDefinition(
+        name: 'list_dir',
+        description:
+            'List files/directories under workspace. Supports recursive listing.',
+        parameters: <String, Object?>{
+          'type': 'object',
+          'properties': <String, Object?>{
+            'path': <String, Object?>{
+              'type': 'string',
+              'description': 'Relative directory path. Default "."',
+            },
+            'recursive': <String, Object?>{
+              'type': 'boolean',
+              'description': 'List recursively when true.',
+            },
+            'max_entries': <String, Object?>{
+              'type': 'integer',
+              'description': 'Optional max number of entries (1-1000).',
+            },
+          },
+          'additionalProperties': false,
+        },
+      ),
+      LlmToolDefinition(
+        name: 'read_file',
+        description:
+            'Read any text file under workspace and return UTF-8 content.',
+        parameters: <String, Object?>{
+          'type': 'object',
+          'properties': <String, Object?>{
+            'path': <String, Object?>{
+              'type': 'string',
+              'description': 'Relative file path in workspace.',
+            },
+          },
+          'required': <String>['path'],
+          'additionalProperties': false,
+        },
+      ),
+      LlmToolDefinition(
+        name: 'write_file',
+        description: 'Write full text content to a workspace file.',
+        parameters: <String, Object?>{
+          'type': 'object',
+          'properties': <String, Object?>{
+            'path': <String, Object?>{
+              'type': 'string',
+              'description': 'Relative file path in workspace.',
+            },
+            'content': <String, Object?>{
+              'type': 'string',
+              'description': 'Full file content.',
+            },
+          },
+          'required': <String>['path', 'content'],
+          'additionalProperties': false,
+        },
+      ),
+      LlmToolDefinition(
+        name: 'append_file',
+        description: 'Append text content to a workspace file.',
+        parameters: <String, Object?>{
+          'type': 'object',
+          'properties': <String, Object?>{
+            'path': <String, Object?>{
+              'type': 'string',
+              'description': 'Relative file path in workspace.',
+            },
+            'content': <String, Object?>{
+              'type': 'string',
+              'description': 'Text to append.',
+            },
+          },
+          'required': <String>['path', 'content'],
+          'additionalProperties': false,
+        },
+      ),
+      LlmToolDefinition(
+        name: 'edit_file',
+        description: 'Replace text in a workspace file.',
+        parameters: <String, Object?>{
+          'type': 'object',
+          'properties': <String, Object?>{
+            'path': <String, Object?>{
+              'type': 'string',
+              'description': 'Relative file path in workspace.',
+            },
+            'old_text': <String, Object?>{
+              'type': 'string',
+              'description': 'Text to replace.',
+            },
+            'new_text': <String, Object?>{
+              'type': 'string',
+              'description': 'Replacement text.',
+            },
+            'replace_all': <String, Object?>{
+              'type': 'boolean',
+              'description': 'Replace all matches when true.',
+            },
+          },
+          'required': <String>['path', 'old_text', 'new_text'],
+          'additionalProperties': false,
+        },
+      ),
+      LlmToolDefinition(
+        name: 'exec',
+        description:
+            'Execute a shell command in workspace (sh -c). Returns stdout/stderr and exit code.',
+        parameters: <String, Object?>{
+          'type': 'object',
+          'properties': <String, Object?>{
+            'command': <String, Object?>{
+              'type': 'string',
+              'description': 'Shell command to run.',
+            },
+            'working_dir': <String, Object?>{
+              'type': 'string',
+              'description': 'Optional relative workspace directory.',
+            },
+            'timeout_seconds': <String, Object?>{
+              'type': 'integer',
+              'description': 'Optional timeout (1-300).',
+            },
+          },
+          'required': <String>['command'],
           'additionalProperties': false,
         },
       ),
@@ -462,6 +591,7 @@ class OpenclawBridge {
 ## Runtime Rules
 - Before answering, consult workspace markdown files when relevant.
 - Use tools to read/write markdown files under workspace.
+- For general file operations and shell tasks, use list_dir/read_file/write_file/append_file/edit_file/exec.
 - Persist long-term memory updates in memory/MEMORY.md when the user provides stable preferences or facts.
 - Use web_search/web_fetch when the task needs up-to-date web information.
 - Use cron to schedule actual timed execution tasks (one-time, interval, or cron expression).
@@ -616,16 +746,28 @@ class OpenclawBridge {
             'path': p.relative(file.path, from: appWorkspace.path),
             'bytes': content.length,
           });
+        case 'list_dir':
+          return await _listDir(args);
+        case 'read_file':
+          return await _readFile(args);
+        case 'write_file':
+          return await _writeFile(args);
+        case 'append_file':
+          return await _appendFile(args);
+        case 'edit_file':
+          return await _editFile(args);
+        case 'exec':
+          return await _exec(args);
         case 'web_search':
-          return _webSearch(args);
+          return await _webSearch(args);
         case 'web_fetch':
-          return _webFetch(args);
+          return await _webFetch(args);
         case 'cron':
-          return _cronTool(args);
+          return await _cronTool(args);
         case 'find_skills':
-          return _findSkills(args);
+          return await _findSkills(args);
         case 'install_skill':
-          return _installSkill(args);
+          return await _installSkill(args);
         default:
           return jsonEncode(<String, Object?>{
             'ok': false,
@@ -636,6 +778,158 @@ class OpenclawBridge {
       return jsonEncode(<String, Object?>{
         'ok': false,
         'error': '$e',
+      });
+    }
+  }
+
+  Future<String> _listDir(Map<String, dynamic> args) async {
+    final raw = '${args['path'] ?? '.'}'.trim();
+    final recursive = (args['recursive'] as bool?) ?? false;
+    final requestedMax = (args['max_entries'] as num?)?.toInt() ?? 200;
+    final maxEntries = requestedMax.clamp(1, 1000);
+
+    final dir = await _resolveWorkspaceDirectory(raw, mustExist: true);
+    final out = <Map<String, Object?>>[];
+    await for (final entity
+        in dir.list(recursive: recursive, followLinks: false)) {
+      final rel = p.relative(entity.path, from: appWorkspace.path);
+      if (entity is Directory) {
+        out.add(<String, Object?>{'path': rel, 'type': 'dir'});
+      } else if (entity is File) {
+        final stat = await entity.stat();
+        out.add(<String, Object?>{
+          'path': rel,
+          'type': 'file',
+          'size': stat.size,
+        });
+      }
+      if (out.length >= maxEntries) {
+        break;
+      }
+    }
+    out.sort((a, b) => '${a['path']}'.compareTo('${b['path']}'));
+    return jsonEncode(<String, Object?>{
+      'ok': true,
+      'path': p.relative(dir.path, from: appWorkspace.path),
+      'entries': out,
+      'truncated': out.length >= maxEntries,
+    });
+  }
+
+  Future<String> _readFile(Map<String, dynamic> args) async {
+    final rel = '${args['path'] ?? ''}'.trim();
+    if (rel.isEmpty) {
+      return jsonEncode(
+          <String, Object?>{'ok': false, 'error': 'path is required'});
+    }
+    final file = await _resolveWorkspaceFile(rel, mustExist: true);
+    final text = await file.readAsString();
+    return jsonEncode(<String, Object?>{
+      'ok': true,
+      'path': p.relative(file.path, from: appWorkspace.path),
+      'content': _clipText(text, 120000),
+    });
+  }
+
+  Future<String> _writeFile(Map<String, dynamic> args) async {
+    final rel = '${args['path'] ?? ''}'.trim();
+    final content = '${args['content'] ?? ''}';
+    if (rel.isEmpty) {
+      return jsonEncode(
+          <String, Object?>{'ok': false, 'error': 'path is required'});
+    }
+    final file = await _resolveWorkspaceFile(rel, mustExist: false);
+    await file.parent.create(recursive: true);
+    await file.writeAsString(content);
+    return jsonEncode(<String, Object?>{
+      'ok': true,
+      'path': p.relative(file.path, from: appWorkspace.path),
+      'bytes': content.length,
+    });
+  }
+
+  Future<String> _appendFile(Map<String, dynamic> args) async {
+    final rel = '${args['path'] ?? ''}'.trim();
+    final content = '${args['content'] ?? ''}';
+    if (rel.isEmpty) {
+      return jsonEncode(
+          <String, Object?>{'ok': false, 'error': 'path is required'});
+    }
+    final file = await _resolveWorkspaceFile(rel, mustExist: false);
+    await file.parent.create(recursive: true);
+    await file.writeAsString(content, mode: FileMode.append);
+    return jsonEncode(<String, Object?>{
+      'ok': true,
+      'path': p.relative(file.path, from: appWorkspace.path),
+      'bytes': content.length,
+    });
+  }
+
+  Future<String> _editFile(Map<String, dynamic> args) async {
+    final rel = '${args['path'] ?? ''}'.trim();
+    final oldText = '${args['old_text'] ?? ''}';
+    final newText = '${args['new_text'] ?? ''}';
+    final replaceAll = (args['replace_all'] as bool?) ?? false;
+    if (rel.isEmpty) {
+      return jsonEncode(
+          <String, Object?>{'ok': false, 'error': 'path is required'});
+    }
+    if (oldText.isEmpty) {
+      return jsonEncode(
+          <String, Object?>{'ok': false, 'error': 'old_text is required'});
+    }
+    final file = await _resolveWorkspaceFile(rel, mustExist: true);
+    final src = await file.readAsString();
+    if (!src.contains(oldText)) {
+      return jsonEncode(
+          <String, Object?>{'ok': false, 'error': 'old_text not found'});
+    }
+    final replaced = replaceAll
+        ? src.replaceAll(oldText, newText)
+        : src.replaceFirst(oldText, newText);
+    await file.writeAsString(replaced);
+    return jsonEncode(<String, Object?>{
+      'ok': true,
+      'path': p.relative(file.path, from: appWorkspace.path),
+      'replace_all': replaceAll,
+    });
+  }
+
+  Future<String> _exec(Map<String, dynamic> args) async {
+    final command = '${args['command'] ?? ''}'.trim();
+    if (command.isEmpty) {
+      return jsonEncode(
+          <String, Object?>{'ok': false, 'error': 'command is required'});
+    }
+    final timeoutSeconds =
+        ((args['timeout_seconds'] as num?)?.toInt() ?? 20).clamp(1, 300);
+    final workDirArg = '${args['working_dir'] ?? '.'}'.trim();
+    final workDir =
+        await _resolveWorkspaceDirectory(workDirArg, mustExist: true);
+    try {
+      final result = await Process.run(
+        'sh',
+        <String>['-c', command],
+        workingDirectory: workDir.path,
+      ).timeout(Duration(seconds: timeoutSeconds));
+      final stdoutText = '${result.stdout}';
+      final stderrText = '${result.stderr}';
+      return jsonEncode(<String, Object?>{
+        'ok': true,
+        'command': command,
+        'working_dir': p.relative(workDir.path, from: appWorkspace.path),
+        'exit_code': result.exitCode,
+        'stdout': _clipText(stdoutText.trim(), 12000),
+        'stderr': _clipText(stderrText.trim(), 12000),
+      });
+    } on FileSystemException catch (e) {
+      return jsonEncode(<String, Object?>{'ok': false, 'error': '$e'});
+    } on ProcessException catch (e) {
+      return jsonEncode(<String, Object?>{'ok': false, 'error': '$e'});
+    } on TimeoutException {
+      return jsonEncode(<String, Object?>{
+        'ok': false,
+        'error': 'command timeout after ${timeoutSeconds}s',
       });
     }
   }
@@ -952,11 +1246,14 @@ class OpenclawBridge {
     return body.trim();
   }
 
-  Future<FileSystemEntity> _resolveWorkspacePath(
-    String inputPath, {
-    required bool mustExist,
-    bool allowDirectory = false,
-  }) async {
+  String _clipText(String input, int maxChars) {
+    if (input.length <= maxChars) {
+      return input;
+    }
+    return input.substring(0, maxChars);
+  }
+
+  String _resolveWorkspaceRawPath(String inputPath) {
     final raw = inputPath.trim();
     if (raw.isEmpty) {
       throw ArgumentError('path is required');
@@ -967,6 +1264,40 @@ class OpenclawBridge {
     if (rel == '..' || rel.startsWith('../')) {
       throw const FileSystemException('path escapes workspace');
     }
+    return targetPath;
+  }
+
+  Future<Directory> _resolveWorkspaceDirectory(
+    String inputPath, {
+    required bool mustExist,
+  }) async {
+    final targetPath = _resolveWorkspaceRawPath(inputPath);
+    final dir = Directory(targetPath);
+    if (mustExist && !await dir.exists()) {
+      throw FileSystemException('directory does not exist', targetPath);
+    }
+    return dir;
+  }
+
+  Future<File> _resolveWorkspaceFile(
+    String inputPath, {
+    required bool mustExist,
+  }) async {
+    final targetPath = _resolveWorkspaceRawPath(inputPath);
+    final file = File(targetPath);
+    if (mustExist && !await file.exists()) {
+      throw FileSystemException('file does not exist', targetPath);
+    }
+    return file;
+  }
+
+  Future<FileSystemEntity> _resolveWorkspacePath(
+    String inputPath, {
+    required bool mustExist,
+    bool allowDirectory = false,
+  }) async {
+    final targetPath = _resolveWorkspaceRawPath(inputPath);
+    final normalized = p.normalize(inputPath.trim());
     if (allowDirectory && !normalized.endsWith('.md')) {
       final dir = Directory(targetPath);
       if (mustExist && !await dir.exists()) {

@@ -113,10 +113,12 @@ class LlmConfig {
   const LlmConfig({
     required this.selectedProvider,
     required this.profiles,
+    required this.maxToolIterations,
   });
 
   final LlmProviderId selectedProvider;
   final Map<LlmProviderId, LlmProviderProfile> profiles;
+  final int maxToolIterations;
 
   LlmProviderProfile profileOf(LlmProviderId id) {
     return profiles[id] ?? defaults.profiles[id]!;
@@ -127,10 +129,12 @@ class LlmConfig {
   LlmConfig copyWith({
     LlmProviderId? selectedProvider,
     Map<LlmProviderId, LlmProviderProfile>? profiles,
+    int? maxToolIterations,
   }) {
     return LlmConfig(
       selectedProvider: selectedProvider ?? this.selectedProvider,
       profiles: profiles ?? this.profiles,
+      maxToolIterations: maxToolIterations ?? this.maxToolIterations,
     );
   }
 
@@ -141,6 +145,7 @@ class LlmConfig {
         for (final entry in profiles.entries)
           llmProviderIdValue(entry.key): entry.value.toJson(),
       },
+      'max_tool_iterations': maxToolIterations,
     };
   }
 
@@ -157,6 +162,7 @@ class LlmConfig {
       return LlmConfig(
         selectedProvider: LlmProviderId.openai,
         profiles: nextProfiles,
+        maxToolIterations: defaults.maxToolIterations,
       );
     }
 
@@ -179,14 +185,19 @@ class LlmConfig {
       }
     }
 
+    final rawMax = (json['max_tool_iterations'] as num?)?.toInt() ??
+        defaults.maxToolIterations;
+
     return LlmConfig(
       selectedProvider: selected,
       profiles: nextProfiles,
+      maxToolIterations: rawMax.clamp(1, 50),
     );
   }
 
   static const LlmConfig defaults = LlmConfig(
     selectedProvider: LlmProviderId.openai,
+    maxToolIterations: 20,
     profiles: <LlmProviderId, LlmProviderProfile>{
       LlmProviderId.openai: LlmProviderProfile.openAiDefault,
       LlmProviderId.gemini: LlmProviderProfile.geminiDefault,
