@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -153,51 +154,191 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _importFromFileSelector() async {
-    final dirPath = await FilePicker.platform.getDirectoryPath(
-      dialogTitle: '選擇要匯入的資料夾',
-    );
-
-    if (dirPath != null && dirPath.trim().isNotEmpty) {
-      final result = await widget.bridge.importFromExternalDirectory(
-        Directory(dirPath),
+    try {
+      final mode = await showModalBottomSheet<String>(
+        context: context,
+        builder: (BuildContext context) {
+          return SafeArea(
+            child: Wrap(
+              children: <Widget>[
+                const ListTile(
+                  title: Text('選擇匯入方式'),
+                  subtitle: Text('資料夾 (OpenClaw) 或 匯入 *.md / .zip'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.folder_open),
+                  title: const Text('匯入資料夾（OpenClaw）'),
+                  onTap: () => Navigator.of(context).pop('dir'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.insert_drive_file_outlined),
+                  title: const Text('匯入 *.md / .zip'),
+                  onTap: () => Navigator.of(context).pop('file'),
+                ),
+              ],
+            ),
+          );
+        },
       );
+      if (mode == null) {
+        return;
+      }
+
+      if (mode == 'dir') {
+        final dirPath = await FilePicker.platform.getDirectoryPath(
+          dialogTitle: '選擇要匯入的資料夾',
+        );
+        if (dirPath == null || dirPath.trim().isEmpty) {
+          return;
+        }
+        final result = await widget.bridge.importFromExternalDirectory(
+          Directory(dirPath),
+        );
+        if (!mounted) {
+          return;
+        }
+        _snack(
+          context,
+          '匯入完成: ${result.copiedFiles} 檔案, ${result.importedSessions} memory sessions',
+        );
+        return;
+      }
+
+      final picked = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        withData: true,
+        type: FileType.custom,
+        allowedExtensions: const <String>['md', 'zip'],
+      );
+      if (picked == null || picked.files.isEmpty) {
+        return;
+      }
+
+      final backup = BackupService(
+        workspaceDir: Directory(p.join(widget.appRoot.path, 'workspace')),
+        memoryDir: Directory(p.join(widget.appRoot.path, 'memory')),
+      );
+
+      var restoredZipCount = 0;
+      final contentFilesFromPath = <File>[];
+      final contentFilesFromBytes = <ImportedFileData>[];
+
+      for (final f in picked.files) {
+        final nameLower = f.name.toLowerCase();
+        final isZip = nameLower.endsWith('.zip');
+        if (isZip) {
+          File? zipFile;
+          if (f.path != null && f.path!.trim().isNotEmpty) {
+            zipFile = File(f.path!);
+          } else if (f.bytes != null) {
+            final tmpDir =
+                Directory(p.join(widget.appRoot.path, 'imports', 'tmp_zip'));
+            await tmpDir.create(recursive: true);
+            zipFile = File(
+              p.join(tmpDir.path,
+                  '${DateTime.now().millisecondsSinceEpoch}_${f.name}'),
+            );
+            await zipFile.writeAsBytes(f.bytes!, flush: true);
+          }
+          if (zipFile != null && await zipFile.exists()) {
+            await backup.restoreBundle(zipFile, widget.appRoot);
+            restoredZipCount += 1;
+          }
+          continue;
+        }
+        final isMarkdown = nameLower.endsWith('.md');
+        if (!isMarkdown) {
+          continue;
+        }
+
+        if (f.path != null && f.path!.trim().isNotEmpty) {
+          contentFilesFromPath.add(File(f.path!));
+        } else if (f.bytes != null) {
+          contentFilesFromBytes.add(
+            ImportedFileData(
+              name: f.name,
+              bytes: f.bytes!,
+            ),
+          );
+        }
+      }
+
+      final fromPath =
+          await widget.bridge.importPickedFiles(contentFilesFromPath);
+      final fromBytes =
+          await widget.bridge.importPickedFileData(contentFilesFromBytes);
+      final totalCopied = fromPath.copiedFiles + fromBytes.copiedFiles;
       if (!mounted) {
         return;
       }
-      _snack(
-        context,
-        '匯入完成: ${result.copiedFiles} 檔案, ${result.importedSessions} memory sessions',
+      _snack(context, '匯入完成: $totalCopied 檔案, $restoredZipCount 個 ZIP');
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      _snack(context, '匯入失敗: $e');
+    }
+  }
+
+  Future<void> _exportBackupZip() async {
+    try {
+      final ts = DateTime.now().toIso8601String().replaceAll(':', '-');
+      final suggestedName = 'mobileclaw_backup_$ts.zip';
+      final backup = BackupService(
+        workspaceDir: Directory(p.join(widget.appRoot.path, 'workspace')),
+        memoryDir: Directory(p.join(widget.appRoot.path, 'memory')),
       );
-      return;
-    }
+      final bytes = Uint8List.fromList(await backup.createBundleBytes());
 
-    final picked = await FilePicker.platform.pickFiles(
-      allowMultiple: true,
-      withData: true,
-      type: FileType.custom,
-      allowedExtensions: const <String>['md', 'txt', 'json', 'yaml', 'yml'],
-    );
-    if (picked == null || picked.files.isEmpty) {
-      return;
-    }
+      String? selectedPath;
+      if (Platform.isAndroid || Platform.isIOS) {
+        selectedPath = await FilePicker.platform.saveFile(
+          dialogTitle: '選擇備份 ZIP 儲存位置',
+          fileName: suggestedName,
+          type: FileType.custom,
+          allowedExtensions: const <String>['zip'],
+          bytes: bytes,
+        );
+        if (selectedPath == null || selectedPath.trim().isEmpty) {
+          _snack(context, '已取消匯出');
+          return;
+        }
+      } else {
+        selectedPath = await FilePicker.platform.saveFile(
+          dialogTitle: '選擇備份 ZIP 儲存位置',
+          fileName: suggestedName,
+          type: FileType.custom,
+          allowedExtensions: const <String>['zip'],
+          bytes: bytes,
+        );
+        if (selectedPath == null || selectedPath.trim().isEmpty) {
+          final dirPath = await FilePicker.platform.getDirectoryPath(
+            dialogTitle: '選擇備份 ZIP 儲存資料夾',
+          );
+          if (dirPath == null || dirPath.trim().isEmpty) {
+            _snack(context, '已取消匯出');
+            return;
+          }
+          selectedPath = p.join(dirPath, suggestedName);
+          await backup.createBundle(File(selectedPath));
+          if (!mounted) {
+            return;
+          }
+          _snack(context, '備份完成: ${selectedPath}');
+          return;
+        }
+      }
 
-    final files = picked.paths.whereType<String>().map(File.new).toList();
-    final fromPath = await widget.bridge.importPickedFiles(files);
-    final inMemory = picked.files
-        .where((f) => (f.path == null || f.path!.isEmpty) && f.bytes != null)
-        .map(
-          (f) => ImportedFileData(
-            name: f.name,
-            bytes: f.bytes!,
-          ),
-        )
-        .toList(growable: false);
-    final fromBytes = await widget.bridge.importPickedFileData(inMemory);
-    final totalCopied = fromPath.copiedFiles + fromBytes.copiedFiles;
-    if (!mounted) {
-      return;
+      if (!mounted) {
+        return;
+      }
+      _snack(context, '備份完成: ${selectedPath}');
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      _snack(context, '匯出失敗: $e');
     }
-    _snack(context, '匯入完成: $totalCopied 檔案');
   }
 
   @override
@@ -330,11 +471,11 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           const Divider(),
           ListTile(
-            title: const Text('匯入 OpenClaw / 文件 (選擇資料夾或檔案)'),
+            title: const Text('匯入 *.md'),
             onTap: _importFromFileSelector,
           ),
           ListTile(
-            title: const Text('檢視 workspace .md 檔案'),
+            title: const Text('檢視 workspace *.md 檔案'),
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
@@ -347,30 +488,8 @@ class _SettingsPageState extends State<SettingsPage> {
             },
           ),
           ListTile(
-            title: const Text('匯出到 OpenClaw (預設 ~/.openclaw)'),
-            onTap: () async {
-              final home = Platform.environment['HOME'] ?? '';
-              await widget.bridge
-                  .exportToOpenclaw(Directory(p.join(home, '.openclaw')));
-              _snack(context, '已匯出到 OpenClaw workspace');
-            },
-          ),
-          ListTile(
-            title: const Text('建立備份 ZIP'),
-            onTap: () async {
-              final backup = BackupService(
-                workspaceDir:
-                    Directory(p.join(widget.appRoot.path, 'workspace')),
-                memoryDir: Directory(p.join(widget.appRoot.path, 'memory')),
-              );
-              final out = await backup.createBundle(
-                File(
-                  p.join(
-                      widget.appRoot.path, 'backups', 'mobileclaw_backup.zip'),
-                ),
-              );
-              _snack(context, '備份完成: ${out.path}');
-            },
+            title: const Text('備份 *.md 成 zip'),
+            onTap: _exportBackupZip,
           ),
         ],
       ),

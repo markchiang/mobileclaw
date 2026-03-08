@@ -9,7 +9,7 @@ class BackupService {
   final Directory workspaceDir;
   final Directory memoryDir;
 
-  Future<File> createBundle(File outputZip) async {
+  Future<List<int>> createBundleBytes() async {
     final archive = Archive();
 
     await _addDirToArchive(archive, workspaceDir, 'workspace');
@@ -19,7 +19,11 @@ class BackupService {
     if (bytes == null) {
       throw StateError('zip encoding failed');
     }
+    return bytes;
+  }
 
+  Future<File> createBundle(File outputZip) async {
+    final bytes = await createBundleBytes();
     await outputZip.parent.create(recursive: true);
     await outputZip.writeAsBytes(bytes, flush: true);
     return outputZip;
@@ -46,7 +50,8 @@ class BackupService {
     }
   }
 
-  Future<void> _addDirToArchive(Archive archive, Directory dir, String prefix) async {
+  Future<void> _addDirToArchive(
+      Archive archive, Directory dir, String prefix) async {
     if (!await dir.exists()) {
       return;
     }
