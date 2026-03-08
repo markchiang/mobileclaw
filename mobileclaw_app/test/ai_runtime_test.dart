@@ -4,8 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mobileclaw_app/core/models/chat_models.dart';
 import 'package:mobileclaw_app/core/providers/llm_provider.dart';
 import 'package:mobileclaw_app/core/services/ai_runtime.dart';
+import 'package:mobileclaw_app/core/services/cron_service.dart';
 import 'package:mobileclaw_app/core/services/jsonl_memory_store.dart';
 import 'package:mobileclaw_app/core/services/openclaw_bridge.dart';
+import 'package:mobileclaw_app/core/services/skill_registry_service.dart';
 import 'package:mobileclaw_app/core/services/web_config_store.dart';
 
 class _StaticProvider implements LlmProvider {
@@ -75,6 +77,8 @@ void main() {
         appWorkspace: workspace,
         memoryStore: memory,
         webConfigStore: WebConfigStore(root),
+        cronService: CronService(root),
+        skillRegistryService: SkillRegistryService(workspaceDir: workspace),
       );
       final provider = _StaticProvider();
       final runtime = AiRuntime(
@@ -126,6 +130,8 @@ void main() {
         appWorkspace: workspace,
         memoryStore: memory,
         webConfigStore: WebConfigStore(root),
+        cronService: CronService(root),
+        skillRegistryService: SkillRegistryService(workspaceDir: workspace),
       );
       final runtime = AiRuntime(
         provider: _ToolCallingProvider(),

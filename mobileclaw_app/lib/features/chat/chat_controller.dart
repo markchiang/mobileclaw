@@ -5,9 +5,11 @@ import 'package:flutter/foundation.dart';
 import '../../core/models/chat_models.dart';
 import '../../core/providers/openai_compatible_provider.dart';
 import '../../core/services/ai_runtime.dart';
+import '../../core/services/cron_service.dart';
 import '../../core/services/jsonl_memory_store.dart';
 import '../../core/services/llm_config_store.dart';
 import '../../core/services/openclaw_bridge.dart';
+import '../../core/services/skill_registry_service.dart';
 import '../../core/services/web_config_store.dart';
 
 class ChatController extends ChangeNotifier {
@@ -34,6 +36,8 @@ class ChatController extends ChangeNotifier {
       appWorkspace: workspace,
       memoryStore: memoryStore,
       webConfigStore: WebConfigStore(appRoot),
+      cronService: CronService(appRoot),
+      skillRegistryService: SkillRegistryService(workspaceDir: workspace),
     );
     llmConfigStore = LlmConfigStore(appRoot);
     runtime = AiRuntime(

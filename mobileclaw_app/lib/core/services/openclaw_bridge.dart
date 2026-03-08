@@ -5,7 +5,9 @@ import 'package:path/path.dart' as p;
 
 import '../models/chat_models.dart';
 import '../providers/llm_provider.dart';
+import 'cron_service.dart';
 import 'jsonl_memory_store.dart';
+import 'skill_registry_service.dart';
 import 'skill_loader.dart';
 import 'web_config_store.dart';
 
@@ -36,11 +38,15 @@ class OpenclawBridge {
     required this.appWorkspace,
     required this.memoryStore,
     required this.webConfigStore,
+    required this.cronService,
+    required this.skillRegistryService,
   });
 
   final Directory appWorkspace;
   final JsonlMemoryStore memoryStore;
   final WebConfigStore webConfigStore;
+  final CronService cronService;
+  final SkillRegistryService skillRegistryService;
 
   List<LlmToolDefinition> workspaceTools() {
     return const <LlmToolDefinition>[
@@ -148,6 +154,102 @@ class OpenclawBridge {
             },
           },
           'required': <String>['url'],
+          'additionalProperties': false,
+        },
+      ),
+      LlmToolDefinition(
+        name: 'cron',
+        description:
+            'Schedule and manage timed jobs. Supports one-time, interval, and cron expression schedules.',
+        parameters: <String, Object?>{
+          'type': 'object',
+          'properties': <String, Object?>{
+            'action': <String, Object?>{
+              'type': 'string',
+              'description': 'add | list | remove | enable | disable',
+            },
+            'message': <String, Object?>{
+              'type': 'string',
+              'description': 'Job message',
+            },
+            'command': <String, Object?>{
+              'type': 'string',
+              'description': 'Optional shell command to run at schedule',
+            },
+            'at_seconds': <String, Object?>{
+              'type': 'integer',
+              'description': 'One-time run after N seconds',
+            },
+            'every_seconds': <String, Object?>{
+              'type': 'integer',
+              'description': 'Interval run every N seconds',
+            },
+            'cron_expr': <String, Object?>{
+              'type': 'string',
+              'description': 'Cron format: minute hour day month weekday',
+            },
+            'job_id': <String, Object?>{
+              'type': 'string',
+              'description': 'Job id for remove/enable/disable',
+            },
+          },
+          'required': <String>['action'],
+          'additionalProperties': false,
+        },
+      ),
+      LlmToolDefinition(
+        name: 'find_skills',
+        description:
+            'Search installable skills from registry and local workspace.',
+        parameters: <String, Object?>{
+          'type': 'object',
+          'properties': <String, Object?>{
+            'query': <String, Object?>{
+              'type': 'string',
+              'description': 'Search query',
+            },
+            'limit': <String, Object?>{
+              'type': 'integer',
+              'description': 'Max results (1-20)',
+            },
+          },
+          'required': <String>['query'],
+          'additionalProperties': false,
+        },
+      ),
+      LlmToolDefinition(
+        name: 'install_skill',
+        description:
+            'Install a skill into workspace/skills. Supports clawhub by slug or github repo.',
+        parameters: <String, Object?>{
+          'type': 'object',
+          'properties': <String, Object?>{
+            'slug': <String, Object?>{
+              'type': 'string',
+              'description': 'Skill slug',
+            },
+            'registry': <String, Object?>{
+              'type': 'string',
+              'description': 'Registry name, default clawhub',
+            },
+            'version': <String, Object?>{
+              'type': 'string',
+              'description': 'Optional version for registry installs',
+            },
+            'git_repo': <String, Object?>{
+              'type': 'string',
+              'description': 'Optional github repo owner/name',
+            },
+            'skill_md_url': <String, Object?>{
+              'type': 'string',
+              'description': 'Optional direct SKILL.md URL',
+            },
+            'force': <String, Object?>{
+              'type': 'boolean',
+              'description': 'Force reinstall',
+            },
+          },
+          'required': <String>['slug'],
           'additionalProperties': false,
         },
       ),
@@ -362,6 +464,8 @@ class OpenclawBridge {
 - Use tools to read/write markdown files under workspace.
 - Persist long-term memory updates in memory/MEMORY.md when the user provides stable preferences or facts.
 - Use web_search/web_fetch when the task needs up-to-date web information.
+- Use cron to schedule actual timed execution tasks (one-time, interval, or cron expression).
+- Use find_skills/install_skill to discover and install skills into workspace/skills.
 ''';
     final workspaceAttachments = await _buildWorkspaceAttachmentContext();
     if (workspaceAttachments.isEmpty) {
@@ -516,6 +620,12 @@ class OpenclawBridge {
           return _webSearch(args);
         case 'web_fetch':
           return _webFetch(args);
+        case 'cron':
+          return _cronTool(args);
+        case 'find_skills':
+          return _findSkills(args);
+        case 'install_skill':
+          return _installSkill(args);
         default:
           return jsonEncode(<String, Object?>{
             'ok': false,
@@ -528,6 +638,87 @@ class OpenclawBridge {
         'error': '$e',
       });
     }
+  }
+
+  Future<String> _cronTool(Map<String, dynamic> args) async {
+    final action = '${args['action'] ?? ''}'.trim();
+    switch (action) {
+      case 'add':
+        final message = '${args['message'] ?? ''}'.trim();
+        if (message.isEmpty) {
+          return jsonEncode(
+              <String, Object?>{'ok': false, 'error': 'message is required'});
+        }
+        final atSeconds = (args['at_seconds'] as num?)?.toInt();
+        final everySeconds = (args['every_seconds'] as num?)?.toInt();
+        final cronExpr = '${args['cron_expr'] ?? ''}';
+        final command = '${args['command'] ?? ''}';
+        final job = await cronService.addJob(
+          message: message,
+          command: command,
+          atSeconds: atSeconds,
+          everySeconds: everySeconds,
+          cronExpr: cronExpr,
+        );
+        return jsonEncode(<String, Object?>{
+          'ok': true,
+          'job': job.toJson(),
+        });
+      case 'list':
+        final jobs = await cronService.listJobs();
+        return jsonEncode(<String, Object?>{
+          'ok': true,
+          'jobs': jobs.map((j) => j.toJson()).toList(),
+        });
+      case 'remove':
+        final id = '${args['job_id'] ?? ''}'.trim();
+        if (id.isEmpty) {
+          return jsonEncode(
+              <String, Object?>{'ok': false, 'error': 'job_id is required'});
+        }
+        final removed = await cronService.removeJob(id);
+        return jsonEncode(<String, Object?>{'ok': removed});
+      case 'enable':
+      case 'disable':
+        final id = '${args['job_id'] ?? ''}'.trim();
+        if (id.isEmpty) {
+          return jsonEncode(
+              <String, Object?>{'ok': false, 'error': 'job_id is required'});
+        }
+        final changed = await cronService.setEnabled(id, action == 'enable');
+        return jsonEncode(<String, Object?>{'ok': changed});
+      default:
+        return jsonEncode(<String, Object?>{
+          'ok': false,
+          'error': 'invalid action',
+        });
+    }
+  }
+
+  Future<String> _findSkills(Map<String, dynamic> args) async {
+    final query = '${args['query'] ?? ''}';
+    final limit = (args['limit'] as num?)?.toInt() ?? 5;
+    final result =
+        await skillRegistryService.findSkills(query: query, limit: limit);
+    return jsonEncode(result);
+  }
+
+  Future<String> _installSkill(Map<String, dynamic> args) async {
+    final slug = '${args['slug'] ?? ''}';
+    final registry = '${args['registry'] ?? 'clawhub'}';
+    final version = '${args['version'] ?? ''}';
+    final gitRepo = '${args['git_repo'] ?? ''}';
+    final skillMdUrl = '${args['skill_md_url'] ?? ''}';
+    final force = (args['force'] as bool?) ?? false;
+    final result = await skillRegistryService.installSkill(
+      slug: slug,
+      registry: registry,
+      version: version,
+      gitRepo: gitRepo,
+      skillMdUrl: skillMdUrl,
+      force: force,
+    );
+    return jsonEncode(result);
   }
 
   Future<String> _webSearch(Map<String, dynamic> args) async {

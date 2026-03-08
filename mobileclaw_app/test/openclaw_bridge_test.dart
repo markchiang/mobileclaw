@@ -1,8 +1,10 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobileclaw_app/core/services/cron_service.dart';
 import 'package:mobileclaw_app/core/services/jsonl_memory_store.dart';
 import 'package:mobileclaw_app/core/services/openclaw_bridge.dart';
+import 'package:mobileclaw_app/core/services/skill_registry_service.dart';
 import 'package:mobileclaw_app/core/services/web_config_store.dart';
 
 void main() {
@@ -36,6 +38,9 @@ void main() {
         appWorkspace: Directory('${appRoot.path}/workspace'),
         memoryStore: store,
         webConfigStore: WebConfigStore(appRoot),
+        cronService: CronService(appRoot),
+        skillRegistryService: SkillRegistryService(
+            workspaceDir: Directory('${appRoot.path}/workspace')),
       );
     });
 
@@ -83,6 +88,30 @@ void main() {
       );
       expect(out, contains('"ok":false'));
       expect(out, contains('disabled'));
+    });
+
+    test('cron tool add/list/remove works', () async {
+      final add = await bridge.executeWorkspaceTool('cron', <String, dynamic>{
+        'action': 'add',
+        'message': 'test cron',
+        'at_seconds': 120,
+      });
+      expect(add, contains('"ok":true'));
+
+      final list = await bridge.executeWorkspaceTool('cron', <String, dynamic>{
+        'action': 'list',
+      });
+      expect(list, contains('"jobs"'));
+      final match = RegExp(r'"id":"([^"]+)"').firstMatch(list);
+      expect(match, isNotNull);
+      final jobId = match!.group(1)!;
+
+      final remove =
+          await bridge.executeWorkspaceTool('cron', <String, dynamic>{
+        'action': 'remove',
+        'job_id': jobId,
+      });
+      expect(remove, contains('"ok":true'));
     });
   });
 }

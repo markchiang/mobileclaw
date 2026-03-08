@@ -7,7 +7,11 @@ import 'package:path_provider/path_provider.dart';
 
 import 'core/services/jsonl_memory_store.dart';
 import 'core/services/background_guard.dart';
+import 'core/services/cron_service.dart';
+import 'core/services/heartbeat_service.dart';
 import 'core/services/openclaw_bridge.dart';
+import 'core/services/runtime_loop_service.dart';
+import 'core/services/skill_registry_service.dart';
 import 'core/services/web_config_store.dart';
 import 'features/chat/chat_controller.dart';
 import 'features/chat/chat_page.dart';
@@ -25,6 +29,7 @@ class _MobileClawAppState extends State<MobileClawApp> {
   Directory? _appRoot;
   String? _bootError;
   final BackgroundGuard _backgroundGuard = BackgroundGuard();
+  RuntimeLoopService? _runtimeLoop;
 
   @override
   void initState() {
@@ -36,6 +41,10 @@ class _MobileClawAppState extends State<MobileClawApp> {
   @override
   void dispose() {
     unawaited(_backgroundGuard.disposeGuard());
+    final loop = _runtimeLoop;
+    if (loop != null) {
+      unawaited(loop.dispose());
+    }
     super.dispose();
   }
 
@@ -44,7 +53,16 @@ class _MobileClawAppState extends State<MobileClawApp> {
       final dir = await getApplicationSupportDirectory();
       final appRoot = Directory('${dir.path}/mobileclaw');
       await appRoot.create(recursive: true);
+      final workspace = Directory('${appRoot.path}/workspace');
       await _seedBundledWorkspace(appRoot);
+      final cronService = CronService(appRoot);
+      final heartbeatService = HeartbeatService(workspaceDir: workspace);
+      final runtimeLoop = RuntimeLoopService(
+        cronService: cronService,
+        heartbeatService: heartbeatService,
+        memoryStore: JsonlMemoryStore(appRoot),
+      );
+      await runtimeLoop.start();
 
       final controller = ChatController(appRoot: appRoot);
       await controller.init();
@@ -56,6 +74,7 @@ class _MobileClawAppState extends State<MobileClawApp> {
         _bootError = null;
         _appRoot = appRoot;
         _controller = controller;
+        _runtimeLoop = runtimeLoop;
       });
     } catch (e) {
       if (!mounted) {
@@ -141,6 +160,10 @@ class _MobileClawAppState extends State<MobileClawApp> {
       appWorkspace: Directory('${appRoot.path}/workspace'),
       memoryStore: JsonlMemoryStore(appRoot),
       webConfigStore: WebConfigStore(appRoot),
+      cronService: CronService(appRoot),
+      skillRegistryService: SkillRegistryService(
+        workspaceDir: Directory('${appRoot.path}/workspace'),
+      ),
     );
 
     return MaterialApp(
