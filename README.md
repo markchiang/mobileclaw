@@ -24,6 +24,44 @@
 > **MobileClaw** 是將 PicoClaw/OpenClaw 核心體驗帶到手機端的 Flutter App：
 > 支援多會話聊天、JSONL 記憶、OpenAI-compatible LLM、Workspace 文件工具、排程、心跳檔案、匯入匯出與備份，並透過 Android 前景服務盡可能維持背景 AI Runtime。
 
+## ⚡ 給使用者：先裝 APK，馬上可用
+
+### 1) 下載安裝 APK
+
+1. 前往 GitHub Releases：<https://github.com/sipeed/picoclaw/releases>
+2. 下載最新的 Android `*.apk` 安裝檔（MobileClaw）。
+3. 在手機上安裝 APK（若系統提示，允許「安裝未知來源應用」）。
+
+> 建議：優先使用最新 Release，以獲得較完整的功能與修正。
+
+### 2) 第一次打開後，完成 LLM 設定
+
+進入 App 的 **Settings** 頁面，填入：
+
+- **API Key**：你的模型服務金鑰
+- **Base URL**：服務端點（OpenAI-compatible）
+- **Model**：例如你要使用的 chat model 名稱
+
+儲存後回到聊天頁，即可開始對話。
+
+### 3) 可選：設定 Web Search
+
+若你希望 Agent 能搜尋網路，可在 Settings 裡額外填：
+
+- Tavily API Key
+- Tavily Base URL
+- Max Results
+
+### 4) 可選：匯入既有工作區資料
+
+你可以直接在 Settings 透過下列方式匯入：
+
+- OpenClaw 工作區資料夾
+- `*.md` 文件
+- `*.zip` 備份包
+
+這樣可以快速復用你原本的 `AGENTS.md / skills / memory` 資料。
+
 ## ✨ Why MobileClaw
 
 - 📱 **真行動化 AI Agent**：在手機上就能持續運行 Agent 工作流。
@@ -74,7 +112,7 @@
 
 更多可參考：`mobileclaw_app/docs/ARCHITECTURE.md`
 
-## 📦 Quick Start
+## 🛠️ 開發者快速開始
 
 ### Prerequisites
 - Flutter SDK `>=3.3.0 <4.0.0`
