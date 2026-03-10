@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/logo.jpg" alt="MobileClaw" width="220" />
+  <img src="assets/mobileclaw.png" alt="MobileClaw" width="220" />
 
 # MobileClaw
 
