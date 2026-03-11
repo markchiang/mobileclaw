@@ -90,6 +90,7 @@
 ### 4) Scheduler + HEARTBEAT
 - `CronService` 支援一次性 / 週期 / cron-like 任務。
 - `HeartbeatService` 週期性更新 `HEARTBEAT.md`，記錄最近事件與任務狀態。
+- Android 不依賴系統 cron daemon：改由 App 內建 runtime loop + 前景服務背景 task 共同定時檢查。
 
 ### 5) Migration / Import / Backup
 - 匯入 OpenClaw 資料夾。
@@ -98,7 +99,37 @@
 
 ### 6) Background Guard (Android)
 - 整合 `flutter_foreground_task` 建立前景服務通知。
-- 盡量降低系統回收背景 runtime 的機率。
+- App 進入背景時會啟動前景服務，並在背景 isolate 週期執行：
+  - 檢查到期 cron job（一次性 / interval / cron expression）
+  - 更新 `workspace/HEARTBEAT.md`
+  - 將執行結果寫入 memory，避免任務在 Android 背景被中斷後完全停擺。
+
+### 7) Cron / Heartbeat 使用方式（Android）
+
+可透過聊天中的 `cron` 工具建立任務：
+
+- 一次性：`at_seconds`
+- 週期：`every_seconds`
+- cron-like：`cron_expr`（格式：`minute hour day month weekday`）
+
+範例：
+
+```json
+{"action":"add","message":"喝水提醒","every_seconds":1800}
+```
+
+```json
+{"action":"add","message":"每日 9:00 提醒","cron_expr":"0 9 * * *"}
+```
+
+管理任務：
+
+- 列表：`{"action":"list"}`
+- 停用：`{"action":"disable","job_id":"..."}`
+- 啟用：`{"action":"enable","job_id":"..."}`
+- 刪除：`{"action":"remove","job_id":"..."}`
+
+Heartbeat 檔案位置：`<app_support>/mobileclaw/workspace/HEARTBEAT.md`。
 
 ## 🧱 Architecture
 
