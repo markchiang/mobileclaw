@@ -3,9 +3,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
+import 'core/services/app_paths.dart';
 import 'core/services/jsonl_memory_store.dart';
 import 'core/services/background_guard.dart';
 import 'core/services/backup_service.dart';
@@ -52,9 +52,7 @@ class _MobileClawAppState extends State<MobileClawApp> {
 
   Future<void> _boot() async {
     try {
-      final dir = await getApplicationSupportDirectory();
-      final appRoot = Directory('${dir.path}/mobileclaw');
-      await appRoot.create(recursive: true);
+      final appRoot = await getMobileClawAppRoot();
       final workspace = Directory('${appRoot.path}/workspace');
       await _seedBundledWorkspace(appRoot);
       final cronService = CronService(appRoot);

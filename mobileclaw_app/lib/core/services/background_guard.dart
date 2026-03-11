@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
+import 'background_runtime_task.dart';
+
 class BackgroundGuard with WidgetsBindingObserver {
   bool _started = false;
 
@@ -35,6 +37,7 @@ class BackgroundGuard with WidgetsBindingObserver {
       await FlutterForegroundTask.startService(
         notificationTitle: 'MobileClaw AI 執行中',
         notificationText: '維持背景推理與記憶同步',
+        callback: startBackgroundRuntimeTask,
       );
     }
     _started = true;

@@ -27,6 +27,7 @@ class RuntimeLoopService {
     _heartbeatTimer ??= Timer.periodic(const Duration(seconds: 60), (_) {
       unawaited(_runHeartbeatTick());
     });
+    await _runCronTick();
     await _runHeartbeatTick();
   }
 
