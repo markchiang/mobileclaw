@@ -19,8 +19,15 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
+    - name: Set up Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.x'
+        channel: stable
+
+    - name: Install Flutter dependencies
+      working-directory: mobileclaw_app
+      run: flutter pub get
 
     - name: Cache Gradle
       uses: actions/cache@v4
@@ -33,19 +40,20 @@ jobs:
           ${{ runner.os }}-gradle-
 
     - name: Build Release APK
-      run: ./gradlew assembleRelease
+      working-directory: mobileclaw_app
+      run: flutter build apk --release
 
     - name: Upload Release APK artifact
       uses: actions/upload-artifact@v4
       with:
         name: release-apk
-        path: app/build/outputs/apk/release/*.apk
+        path: mobileclaw_app/build/app/outputs/flutter-apk/*.apk
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       if: success()         # 只在前面步驟成功時執行
       with:
-        files: app/build/outputs/apk/release/*.apk
+        files: mobileclaw_app/build/app/outputs/flutter-apk/*.apk
         generate_release_notes: true
       env:
 
