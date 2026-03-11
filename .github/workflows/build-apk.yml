@@ -22,8 +22,8 @@ jobs:
     - name: Set up Android SDK
       uses: android-actions/setup-android@v3
 
-    - name: Install Android NDK and CMake
-      run: sdkmanager --install 'ndk;27.0.12077973' 'cmake;3.22.1'
+    - name: Install Android NDK
+      run: sdkmanager --install 'ndk;27.0.12077973'
 
     - name: Set up Flutter
       uses: subosito/flutter-action@v2
