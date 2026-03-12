@@ -22,6 +22,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   lints: ^4.0.0
+  flutter_launcher_icons: ^0.13.1
 
 dependency_overrides:
   archive: ^3.6.1
@@ -30,3 +31,9 @@ flutter:
   uses-material-design: true
   assets:
     - assets/default_workspace/
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: false
+  image_path: "assets/icon.png"
+  min_sdk_android: 21

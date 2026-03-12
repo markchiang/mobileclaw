@@ -86,7 +86,7 @@ class MobileClawTaskHandler extends TaskHandler {
   }
 
   @override
-  Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {}
+  Future<void> onDestroy(DateTime timestamp) async {}
 
   @override
   void onNotificationButtonPressed(String id) {}
@@ -97,4 +97,3 @@ class MobileClawTaskHandler extends TaskHandler {
   @override
   void onNotificationDismissed() {}
 }
-

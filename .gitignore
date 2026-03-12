@@ -1,21 +1,12 @@
 # Binaries
-# Go build artifacts
 bin/
 build/
-*.exe
-*.dll
-*.so
-*.dylib
-*.test
-*.out
-/picoclaw
-/picoclaw-test
 cmd/**/workspace
 
-# Picoclaw specific
+# Mobilelaw specific
 
-# PicoClaw
-.picoclaw/
+# MobileClaw
+.mobileclaw/
 config.json
 sessions/
 build/
