@@ -13,7 +13,6 @@
   </p>
 
   <p>
-    <a href="README.zh.md">中文（PicoClaw 主專案）</a> ·
     <a href="mobileclaw_app/README.md">Flutter 子專案 README</a> ·
     <a href="mobileclaw_app/docs/ARCHITECTURE.md">Architecture</a>
   </p>
@@ -28,7 +27,7 @@
 
 ### 1) 下載安裝 APK
 
-1. 前往 GitHub Releases：<https://github.com/sipeed/picoclaw/releases>
+1. 前往 GitHub Releases：<https://github.com/markchiang/mobileclaw/releases>
 2. 下載最新的 Android `*.apk` 安裝檔（MobileClaw）。
 3. 在手機上安裝 APK（若系統提示，允許「安裝未知來源應用」）。
 
@@ -151,8 +150,8 @@ Heartbeat 檔案位置：`<app_support>/mobileclaw/workspace/HEARTBEAT.md`。
 
 ### 1. Clone
 ```bash
-git clone https://github.com/sipeed/picoclaw.git
-cd picoclaw/mobileclaw_app
+git clone https://github.com/markchiang/mobileclaw.git
+cd mobileclaw/mobileclaw_app
 ```
 
 ### 2. Install dependencies

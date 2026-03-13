@@ -1,4 +1,4 @@
-# MobileClaw Architecture (PicoClaw Go -> Dart)
+# MobileClaw Architecture
 
 ## Goals
 - Keep PicoClaw-like core flow: `message -> context build -> memory retrieval -> provider -> persist`.
