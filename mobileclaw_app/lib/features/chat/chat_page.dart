@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../../core/models/chat_models.dart';
@@ -197,12 +198,23 @@ class _MessageCard extends StatelessWidget {
 
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Card(
-        color: color,
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: MarkdownBody(data: msg.content),
+      child: GestureDetector(
+        onLongPress: () {
+          Clipboard.setData(ClipboardData(text: msg.content));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('已複製訊息'),
+              duration: Duration(seconds: 1),
+            ),
+          );
+        },
+        child: Card(
+          color: color,
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: MarkdownBody(data: msg.content),
+          ),
         ),
       ),
     );
