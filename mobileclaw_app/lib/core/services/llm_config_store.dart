@@ -86,7 +86,7 @@ class LlmProviderProfile {
   static const LlmProviderProfile openRouterDefault = LlmProviderProfile(
     apiKey: '',
     baseUrl: 'https://openrouter.ai/api/v1/chat/completions',
-    model: 'openai/gpt-4o-mini',
+    model: 'openrouter/free',
   );
 
   static const LlmProviderProfile geminiDefault = LlmProviderProfile(
@@ -99,7 +99,7 @@ class LlmProviderProfile {
   static const LlmProviderProfile ollamaDefault = LlmProviderProfile(
     apiKey: '',
     baseUrl: 'http://127.0.0.1:11434/v1/chat/completions',
-    model: 'llama3.1:8b',
+    model: 'minimax-m2.5:cloud',
   );
 
   static const LlmProviderProfile customDefault = LlmProviderProfile(
