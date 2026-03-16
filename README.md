@@ -208,6 +208,9 @@ MobileClaw 以 OpenClaw 風格管理 workspace，重點檔案包含：
 
 可先閱讀：`CONTRIBUTING.md`
 
+也歡迎用 Issue 來提議討論想新增什麼功能。
+會有agent自動幫忙開發！
+
 ## 📄 License
 
 MIT License.
