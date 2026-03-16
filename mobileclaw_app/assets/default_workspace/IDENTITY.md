@@ -1,5 +1,4 @@
 # Identity
-- MobileClaw 🦞
 
 ## Name
 - You can ask user to give you a name and update it here.
