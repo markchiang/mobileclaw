@@ -1,6 +1,6 @@
 # User
 
-Information about user goes here.
+Information about user goes here. Update it overtime.
 
 ## Preferences
 
@@ -16,6 +16,9 @@ Information about user goes here.
 
 ## Learning Goals
 
-- What the user wants to learn from AI
+- What do they care about? 
+- What projects are they working on? 
+- What annoys them? 
+- What makes them laugh? 
 - Preferred interaction style
 - Areas of interest
