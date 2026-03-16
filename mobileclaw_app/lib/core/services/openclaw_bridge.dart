@@ -1106,77 +1106,144 @@ class OpenclawBridge {
     final client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 10);
     try {
-      final uri = Uri.https('api.duckduckgo.com', '/', <String, String>{
-        'q': query,
-        'format': 'json',
-        'no_redirect': '1',
-        'no_html': '1',
-      });
-      final req = await client.getUrl(uri);
-      final resp = await req.close();
-      final body = await utf8.decodeStream(resp);
-      if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      final results = await _searchViaDuckDuckGoApi(
+        client: client,
+        query: query,
+        maxResults: maxResults,
+      );
+      if (results.isEmpty) {
         return jsonEncode(<String, Object?>{
           'ok': false,
-          'error': 'duckduckgo error ${resp.statusCode}',
-          'body': body,
+          'provider': 'duckduckgo',
+          'query': query,
+          'error': 'no results from DuckDuckGo Instant Answer API',
         });
       }
-      final data = jsonDecode(body) as Map<String, dynamic>;
-      final results = <Map<String, Object?>>[];
-
-      final abstractText = '${data['AbstractText'] ?? ''}'.trim();
-      final abstractUrl = '${data['AbstractURL'] ?? ''}'.trim();
-      if (abstractText.isNotEmpty || abstractUrl.isNotEmpty) {
-        results.add(<String, Object?>{
-          'title': '${data['Heading'] ?? query}',
-          'url': abstractUrl,
-          'content': abstractText,
-        });
-      }
-
-      final related = (data['RelatedTopics'] as List<dynamic>? ?? <dynamic>[]);
-      for (final item in related) {
-        if (results.length >= maxResults) {
-          break;
-        }
-        if (item is Map<String, dynamic>) {
-          if (item['Text'] != null || item['FirstURL'] != null) {
-            results.add(<String, Object?>{
-              'title': '${item['Text'] ?? ''}',
-              'url': '${item['FirstURL'] ?? ''}',
-              'content': '${item['Text'] ?? ''}',
-            });
-            continue;
-          }
-          final nested = item['Topics'];
-          if (nested is List<dynamic>) {
-            for (final n in nested) {
-              if (results.length >= maxResults) {
-                break;
-              }
-              if (n is Map<String, dynamic> &&
-                  (n['Text'] != null || n['FirstURL'] != null)) {
-                results.add(<String, Object?>{
-                  'title': '${n['Text'] ?? ''}',
-                  'url': '${n['FirstURL'] ?? ''}',
-                  'content': '${n['Text'] ?? ''}',
-                });
-              }
-            }
-          }
-        }
-      }
-
       return jsonEncode(<String, Object?>{
         'ok': true,
         'provider': 'duckduckgo',
         'query': query,
-        'results': results.take(maxResults).toList(),
+        'results': results,
       });
     } finally {
       client.close(force: true);
     }
+  }
+
+  Future<List<Map<String, Object?>>> _searchViaDuckDuckGoApi({
+    required HttpClient client,
+    required String query,
+    required int maxResults,
+  }) async {
+    final uri = Uri.https('api.duckduckgo.com', '/', <String, String>{
+      'q': query,
+      'format': 'json',
+      'no_redirect': '1',
+      'no_html': '1',
+      'skip_disambig': '1',
+    });
+    final req = await client.getUrl(uri);
+    final resp = await req.close();
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      return <Map<String, Object?>>[];
+    }
+
+    final body = await utf8.decodeStream(resp);
+    final data = jsonDecode(body) as Map<String, dynamic>;
+    final results = <Map<String, Object?>>[];
+    final seen = <String>{};
+
+    void addResult({
+      required String title,
+      required String url,
+      required String content,
+    }) {
+      if (results.length >= maxResults) {
+        return;
+      }
+      final trimmedUrl = url.trim();
+      final trimmedTitle = title.trim();
+      final trimmedContent = content.trim();
+      if (trimmedUrl.isEmpty && trimmedTitle.isEmpty && trimmedContent.isEmpty) {
+        return;
+      }
+      final dedupeKey = trimmedUrl.isNotEmpty
+          ? trimmedUrl
+          : '${trimmedTitle.toLowerCase()}|${trimmedContent.toLowerCase()}';
+      if (!seen.add(dedupeKey)) {
+        return;
+      }
+      results.add(<String, Object?>{
+        'title': trimmedTitle.isNotEmpty
+            ? trimmedTitle
+            : (trimmedUrl.isNotEmpty ? trimmedUrl : query),
+        'url': trimmedUrl,
+        'content': trimmedContent,
+      });
+    }
+
+    addResult(
+      title: '${data['Heading'] ?? query}',
+      url: '${data['AbstractURL'] ?? ''}',
+      content: '${data['AbstractText'] ?? ''}',
+    );
+    addResult(
+      title: '${data['AnswerType'] ?? 'answer'}',
+      url: '',
+      content: '${data['Answer'] ?? ''}',
+    );
+    addResult(
+      title: 'definition',
+      url: '${data['DefinitionURL'] ?? ''}',
+      content: '${data['Definition'] ?? ''}',
+    );
+
+    final directResults = (data['Results'] as List<dynamic>? ?? <dynamic>[])
+        .whereType<Map<String, dynamic>>();
+    for (final item in directResults) {
+      if (results.length >= maxResults) {
+        break;
+      }
+      addResult(
+        title: '${item['Text'] ?? item['Result'] ?? ''}',
+        url: '${item['FirstURL'] ?? ''}',
+        content: '${item['Text'] ?? ''}',
+      );
+    }
+
+    final related = (data['RelatedTopics'] as List<dynamic>? ?? <dynamic>[]);
+    for (final item in related) {
+      if (results.length >= maxResults) {
+        break;
+      }
+      if (item is Map<String, dynamic>) {
+        if (item['Text'] != null || item['FirstURL'] != null) {
+          addResult(
+            title: '${item['Text'] ?? ''}',
+            url: '${item['FirstURL'] ?? ''}',
+            content: '${item['Text'] ?? ''}',
+          );
+          continue;
+        }
+        final nested = item['Topics'];
+        if (nested is List<dynamic>) {
+          for (final n in nested) {
+            if (results.length >= maxResults) {
+              break;
+            }
+            if (n is Map<String, dynamic> &&
+                (n['Text'] != null || n['FirstURL'] != null)) {
+              addResult(
+                title: '${n['Text'] ?? ''}',
+                url: '${n['FirstURL'] ?? ''}',
+                content: '${n['Text'] ?? ''}',
+              );
+            }
+          }
+        }
+      }
+    }
+    return results.take(maxResults).toList();
   }
 
   Future<String> _webFetch(Map<String, dynamic> args) async {
